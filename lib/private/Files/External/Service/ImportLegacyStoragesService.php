@@ -20,37 +20,30 @@
  *
  */
 
-namespace OCA\Files_External\Service;
+namespace OC\Files\External\Service;
 
-use OCP\IUserSession;
 use OCP\Files\External\IStoragesBackendService;
 
-/**
- * Read user defined mounts from the legacy mount.json
- */
-class UserLegacyStoragesService extends LegacyStoragesService {
-	/**
-	 * @var IUserSession
-	 */
-	private $userSession;
+class ImportLegacyStoragesService extends LegacyStoragesService {
+	private $data;
 
 	/**
 	 * @param IStoragesBackendService $backendService
-	 * @param IUserSession $userSession
 	 */
-	public function __construct(IStoragesBackendService $backendService, IUserSession $userSession) {
+	public function __construct(IStoragesBackendService $backendService) {
 		$this->backendService = $backendService;
-		$this->userSession = $userSession;
+	}
+
+	public function setData($data) {
+		$this->data = $data;
 	}
 
 	/**
 	 * Read legacy config data
 	 *
-	 * @return array list of storage configs
+	 * @return array list of mount configs
 	 */
 	protected function readLegacyConfig() {
-		// read user config
-		$user = $this->userSession->getUser()->getUID();
-		return \OC_Mount_Config::readData($user);
+		return $this->data;
 	}
 }

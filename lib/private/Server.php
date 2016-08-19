@@ -84,6 +84,9 @@ use OCP\Security\IContentSecurityPolicyManager;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use OC\Files\External\StoragesBackendService;
+use OC\Files\External\Service\UserStoragesService;
+use OC\Files\External\Service\UserGlobalStoragesService;
+use OC\Files\External\Service\GlobalStoragesService;
 
 /**
  * Class Server
@@ -661,6 +664,15 @@ class Server extends ServerContainer implements IServerContainer {
 		});
 		$this->registerService('StoragesBackendService', function (Server $c) {
 			return new StoragesBackendService($c->query('AllConfig'));
+		});
+		$this->registerService('GlobalStoragesService', function (Server $c) {
+			return new GlobalStoragesService($c->query('AllConfig'));
+		});
+		$this->registerService('UserGlobalStoragesService', function (Server $c) {
+			return new UserGlobalStoragesService($c->query('AllConfig'));
+		});
+		$this->registerService('UserStoragesService', function (Server $c) {
+			return new UserStoragesService($c->query('AllConfig'));
 		});
 		$this->registerService('ShareManager', function(Server $c) {
 			$config = $c->getConfig();
@@ -1335,7 +1347,7 @@ class Server extends ServerContainer implements IServerContainer {
 	 * @return \OCA\Files_External\Service\GlobalStoragesService
 	 */
 	public function getGlobalStoragesService() {
-		return \OC_Mount_Config::$app->getContainer()->query('OCA\\Files_External\\Service\\GlobalStoragesService');
+		return $this->query('GlobalStoragesService');
 	}
 
 	/**
@@ -1344,7 +1356,7 @@ class Server extends ServerContainer implements IServerContainer {
 	 * @return \OCA\Files_External\Service\UserGlobalStoragesService
 	 */
 	public function getUserGlobalStoragesService() {
-		return \OC_Mount_Config::$app->getContainer()->query('OCA\\Files_External\\Service\\UserGlobalStoragesService');
+		return $this->query('UserGlobalStoragesService');
 	}
 
 	/**
@@ -1353,7 +1365,7 @@ class Server extends ServerContainer implements IServerContainer {
 	 * @return \OCA\Files_External\Service\UserStoragesService
 	 */
 	public function getUserStoragesService() {
-		return \OC_Mount_Config::$app->getContainer()->query('OCA\\Files_External\\Service\\UserStoragesService');
+		return $this->query('UserStoragesService');
 	}
 
 	/**
