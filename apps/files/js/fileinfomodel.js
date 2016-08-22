@@ -80,11 +80,12 @@
 	var FileInfoModel = OC.Backbone.Model.extend({
 		sync: OC.Backbone.davSync,
 
+		//idAttribute: 'href',
 		davProperties: {
 			/**
 			 * File id
 			 */
-			'id': '{' + NS_OWNCLOUD + '}fileid',
+			'fileid': '{' + NS_OWNCLOUD + '}fileid',
 			/**
 			 * Modified time
 			 */
@@ -139,6 +140,7 @@
 					OC.getCurrentUser().uid
 				);
 			}
+			this._filesClient = options.filesClient || OC.Files.getClient();
 		},
 
 		url: function() {
@@ -200,7 +202,9 @@
 			}
 			result.size = parseInt(result.size, 10);
 			result.id = parseInt(result.id, 10);
-			result.etag = parseEtag(result.etag);
+			if (result.etag) {
+				result.etag = parseEtag(result.etag);
+			}
 
 			var isFile = true;
 			if (!result.mimetype && result.resourceType && result.resourceType.length) {
@@ -211,8 +215,52 @@
 				}
 			}
 			delete result.resourceType;
-			_.extend(result, parsePermissions(result, isFile));
+			if (result.permissions) {
+				_.extend(result, parsePermissions(result, isFile));
+			}
+			if (result.mtime) {
+				result.mtime = new Date(result.mtime).getTime();
+			}
 			return result;
+		},
+
+		isDirectory: function() {
+			return this.get('mimetype') === 'httpd/unix-directory';
+		},
+
+		/**
+		 * Returns whether the file is a dot file
+		 *
+		 * @return {boolean} true if the file is a hidden file, false otherwise
+		 */
+		isHiddenFile: function() {
+			return this.get('name').charAt(0) === '.';
+		},
+
+		fetch: function(options) {
+			options = options || {};
+			var success = options.success;
+			var error = options.error;
+			var self = this;
+			return OC.Backbone.davSync('PROPFIND', this, {
+				depth: 1,
+				includeRoot: true,
+				success: function(results) {
+					var collection = self.getCollection();
+					var rootResult = results.shift();
+					self.set(rootResult);
+					collection.reset(results, {parse: true});
+					collection.trigger('sync', 'PROPFIND', collection, options);
+					if (success) {
+						success.apply(null, arguments);
+					}
+				},
+				error: function() {
+					if (error) {
+						error.apply(null, arguments);
+					}
+				}
+			});
 		}
 	});
 

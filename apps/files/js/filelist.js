@@ -44,7 +44,6 @@
 
 		id: 'files',
 		appName: t('files', 'Files'),
-		isEmpty: true,
 		useUndo:true,
 
 		/**
@@ -100,19 +99,21 @@
 		},
 
 		/**
-		 * Array of files in the current folder.
-		 * The entries are of file data.
+		 * Collection of file models
 		 *
-		 * @type Array.<OC.Files.FileInfo>
+		 * @type OCA.Files.FileInfoCollection
+		 *
+		 * @since 9.2
 		 */
-		files: [],
+		collection: null,
 
 		/**
-		 * Current directory entry
+		 * Model for the current folder
 		 *
-		 * @type OC.Files.FileInfo
+		 * @type OCA.Files.FileInfoModel
+		 * @since 9.2
 		 */
-		dirInfo: null,
+		model: null,
 
 		/**
 		 * File actions handler, defaults to OCA.Files.FileActions
@@ -174,12 +175,6 @@
 		 */
 		_clientSideSort: true,
 
-		/**
-		 * Current directory
-		 * @type String
-		 */
-		_currentDirectory: null,
-
 		_dragOptions: null,
 		_folderDropOptions: null,
 
@@ -200,6 +195,7 @@
 		initialize: function($el, options) {
 			var self = this;
 			options = options || {};
+
 			if (this.initialized) {
 				return;
 			}
@@ -226,6 +222,17 @@
 				// default client if not specified
 				this.filesClient = OC.Files.getClient();
 			}
+
+
+			if (options.model) {
+				this.model = options.model;
+			} else {
+				this.model = new OCA.Files.FileInfoModel({path: ''}, {filesClient: this.filesClient});
+			}
+
+			this.collection = this.model.getCollection();
+			this.collection.on('sync', this._onCollectionReset, this);
+			//this.collection.on('sort', this._onCollectionReset, this);
 
 			this.$el = $el;
 			if (options.id) {
@@ -267,7 +274,6 @@
 			this._selectedFiles = {};
 			this._selectionSummary = new OCA.Files.FileSummary(undefined, {config: this._filesConfig});
 			// dummy root dir info
-			this.dirInfo = new OC.Files.FileInfo({});
 
 			this.fileSummary = this._createSummary();
 
@@ -395,6 +401,9 @@
 		 * @return {OCA.Files.FileInfoModel} file info model
 		 */
 		getModelForFile: function(fileName) {
+			return this.findFile(fileName);
+			// TODO: integrate the rest
+			/*
 			var self = this;
 			var $tr;
 			// jQuery object ?
@@ -424,6 +433,7 @@
 				model.set('path', this.getCurrentDirectory(), {silent: true});
 			}
 
+			// TODO: register this on collection directly
 			model.on('change', function(model) {
 				// re-render row
 				var highlightState = $tr.hasClass('highlighted');
@@ -442,8 +452,7 @@
 			model.on('busy', function(model, state) {
 				self.showFileBusyState($tr, state);
 			});
-
-			return model;
+			*/
 		},
 
 		/**
@@ -496,7 +505,7 @@
 			}
 
 			var $tr = this.findFileEl(fileName);
-			var model = this.getModelForFile($tr);
+			var model = this.findFile(fileName);
 
 			this._currentFileModel = model;
 
@@ -837,10 +846,9 @@
 		 * @since 8.2
 		 */
 		findFile: function(fileName) {
-			return _.find(this.files, function(aFile) {
-				return (aFile.name === fileName);
-			}) || null;
+			return this.collection.findWhere({name: fileName});
 		},
+
 		/**
 		 * Returns the tr element for a given file name, but only if it was already rendered.
 		 *
@@ -890,6 +898,7 @@
 		 * @return array of DOM elements of the newly added files
 		 */
 		_nextPage: function(animate) {
+			// TODO: do this on the collection directly and use "add" events
 			var index = this.$fileList.children().length,
 				count = this.pageSize(),
 				hidden,
@@ -898,14 +907,14 @@
 				newTrs = [],
 				isAllSelected = this.isAllSelected();
 
-			if (index >= this.files.length) {
+			if (index >= this.collection.length) {
 				return false;
 			}
 
-			while (count > 0 && index < this.files.length) {
-				fileData = this.files[index];
+			while (count > 0 && index < this.collection.length) {
+				fileData = this.collection.at(index);
 				if (this._filter) {
-					hidden = fileData.name.toLowerCase().indexOf(this._filter.toLowerCase()) === -1;
+					hidden = fileData.get('name').toLowerCase().indexOf(this._filter.toLowerCase()) === -1;
 				} else {
 					hidden = false;
 				}
@@ -962,12 +971,15 @@
 		 * Sets the files to be displayed in the list.
 		 * This operation will re-render the list and update the summary.
 		 * @param filesArray array of file data (map)
+		 *
+		 * @deprecated use the collection directly
 		 */
 		setFiles: function(filesArray) {
-			var self = this;
+			this.collection.reset(filesArray);
+		},
 
-			// detach to make adding multiple rows faster
-			this.files = filesArray;
+		_onCollectionReset: function() {
+			var self = this;
 
 			this.$fileList.empty();
 
@@ -976,7 +988,6 @@
 
 			// Save full files list while rendering
 
-			this.isEmpty = this.files.length === 0;
 			this._nextPage();
 
 			this.updateEmptyContent();
@@ -1013,12 +1024,13 @@
 		 * @return {string} icon URL
 		 */
 		_getIconUrl: function(fileInfo) {
-			var mimeType = fileInfo.mimetype || 'application/octet-stream';
+			var mimeType = fileInfo.get('mimetype') || 'application/octet-stream';
 			if (mimeType === 'httpd/unix-directory') {
+				var mountType = fileInfo.get('mountType');
 				// use default folder icon
-				if (fileInfo.mountType === 'shared' || fileInfo.mountType === 'shared-root') {
+				if (mountType === 'shared' || mountType === 'shared-root') {
 					return OC.MimeType.getIconUrl('dir-shared');
-				} else if (fileInfo.mountType === 'external-root') {
+				} else if (mountType === 'external-root') {
 					return OC.MimeType.getIconUrl('dir-external');
 				}
 				return OC.MimeType.getIconUrl('dir');
@@ -1028,19 +1040,18 @@
 
 		/**
 		 * Creates a new table row element using the given file data.
-		 * @param {OC.Files.FileInfo} fileData file info attributes
+		 * @param {OCA.Files.FileInfoModel} fileData file info attributes
 		 * @param options map of attributes
 		 * @return new tr element (not appended to the table)
 		 */
 		_createRow: function(fileData, options) {
 			var td, simpleSize, basename, extension, sizeColor,
-				icon = fileData.icon || this._getIconUrl(fileData),
-				name = fileData.name,
-				// TODO: get rid of type, only use mime type
-				type = fileData.type || 'file',
-				mtime = parseInt(fileData.mtime, 10),
-				mime = fileData.mimetype,
-				path = fileData.path,
+				icon = fileData.get('icon') || this._getIconUrl(fileData),
+				name = fileData.get('name'),
+				mtime = parseInt(fileData.get('mtime'), 10),
+				mime = fileData.get('mimetype'),
+				path = fileData.get('path'),
+				type,
 				dataIcon = null,
 				linkUrl;
 			options = options || {};
@@ -1049,25 +1060,26 @@
 				mtime = new Date().getTime();
 			}
 
-			if (type === 'dir') {
-				mime = mime || 'httpd/unix-directory';
-
-				if (fileData.mountType && fileData.mountType.indexOf('external') === 0) {
+			if (fileData.isDirectory()) {
+				type = 'dir';
+				if (fileData.get('mountType') && fileData.get('mountType').indexOf('external') === 0) {
 					icon = OC.MimeType.getIconUrl('dir-external');
 					dataIcon = icon;
 				}
+			} else {
+				type = 'file';
 			}
 
 			//containing tr
 			var tr = $('<tr></tr>').attr({
 				"data-id" : fileData.id,
 				"data-type": type,
-				"data-size": fileData.size,
+				"data-size": fileData.get('size'),
 				"data-file": name,
 				"data-mime": mime,
 				"data-mtime": mtime,
-				"data-etag": fileData.etag,
-				"data-permissions": fileData.permissions || this.getDirectoryPermissions()
+				"data-etag": fileData.get('etag'),
+				"data-permissions": fileData.get('permissions') || this.getDirectoryPermissions()
 			});
 
 			if (dataIcon) {
@@ -1075,6 +1087,8 @@
 				tr.attr('data-icon', dataIcon);
 			}
 
+			// FIXME: solve this on model level
+			/*
 			if (fileData.mountType) {
 				// dirInfo (parent) only exist for the "real" file list
 				if (this.dirInfo.id) {
@@ -1089,6 +1103,7 @@
 				}
 				tr.attr('data-mounttype', fileData.mountType);
 			}
+			*/
 
 			if (!_.isUndefined(path)) {
 				tr.attr('data-path', path);
@@ -1125,7 +1140,7 @@
 			});
 
 			// from here work on the display name
-			name = fileData.displayName || name;
+			name = fileData.get('displayName') || name;
 
 			// show hidden files (starting with a dot) completely in gray
 			if(name.indexOf('.') === 0) {
@@ -1146,11 +1161,12 @@
 			if (extension) {
 				nameSpan.append($('<span></span>').addClass('extension').text(extension));
 			}
-			if (fileData.extraData) {
-				if (fileData.extraData.charAt(0) === '/') {
-					fileData.extraData = fileData.extraData.substr(1);
+			var extraData = fileData.get('extraData');
+			if (extraData) {
+				if (extraData.charAt(0) === '/') {
+					extraData = extraData.substr(1);
 				}
-				nameSpan.addClass('extra-data').attr('title', fileData.extraData);
+				nameSpan.addClass('extra-data').attr('title', extraData);
 				nameSpan.tooltip({placement: 'right'});
 			}
 			// dirs can show the number of uploaded files
@@ -1164,9 +1180,10 @@
 			tr.append(td);
 
 			// size column
-			if (typeof(fileData.size) !== 'undefined' && fileData.size >= 0) {
-				simpleSize = humanFileSize(parseInt(fileData.size, 10), true);
-				sizeColor = Math.round(160-Math.pow((fileData.size/(1024*1024)),2));
+			var size = fileData.get('size');
+			if (typeof(size) !== 'undefined' && size >= 0) {
+				simpleSize = humanFileSize(parseInt(size, 10), true);
+				sizeColor = Math.round(160-Math.pow((size/(1024*1024)),2));
 			} else {
 				simpleSize = t('files', 'Pending');
 			}
@@ -1256,7 +1273,6 @@
 				}
 			}
 
-			this.isEmpty = false;
 			this.files.splice(index, 0, fileData);
 
 			if ($tr && options.animate) {
@@ -1283,7 +1299,7 @@
 		 * Creates a new row element based on the given attributes
 		 * and returns it.
 		 *
-		 * @param {OC.Files.FileInfo} fileData map of file attributes
+		 * @param {OCA.Files.FileInfoModel} fileData map of file attributes
 		 * @param {Object} [options] map of attributes
 		 * @param {int} [options.index] index at which to insert the element
 		 * @param {boolean} [options.updateSummary] true to update the summary
@@ -1294,18 +1310,14 @@
 		 */
 		_renderRow: function(fileData, options) {
 			options = options || {};
-			var type = fileData.type || 'file',
-				mime = fileData.mimetype,
-				path = fileData.path || this.getCurrentDirectory(),
-				permissions = parseInt(fileData.permissions, 10) || 0;
+			var mime = fileData.get('mimetype'),
+				path = fileData.get('path') || this.getCurrentDirectory(),
+				permissions = fileData.get('permissions');
 
 			if (fileData.isShareMountPoint) {
 				permissions = permissions | OC.PERMISSION_UPDATE;
 			}
 
-			if (type === 'dir') {
-				mime = mime || 'httpd/unix-directory';
-			}
 			var tr = this._createRow(
 				fileData,
 				options
@@ -1326,7 +1338,7 @@
 				tr.addClass('hidden');
 			}
 
-			if (this._isHiddenFile(fileData)) {
+			if (fileData.isHiddenFile()) {
 				tr.addClass('hidden-file');
 			}
 
@@ -1339,7 +1351,7 @@
 				// the typeof check ensures that the default value of animate is true
 				if (typeof(options.animate) === 'undefined' || !!options.animate) {
 					this.lazyLoadPreview({
-						path: path + '/' + fileData.name,
+						path: path + '/' + fileData.get('name'),
 						mime: mime,
 						etag: fileData.etag,
 						callback: function(url) {
@@ -1350,8 +1362,8 @@
 				else {
 					// set the preview URL directly
 					var urlSpec = {
-							file: path + '/' + fileData.name,
-							c: fileData.etag
+							file: path + '/' + fileData.get('name'),
+							c: fileData.get('etag')
 						};
 					var previewUrl = this.generatePreviewUrl(urlSpec);
 					previewUrl = previewUrl.replace('(', '%28').replace(')', '%29');
@@ -1366,14 +1378,14 @@
 		 * @return current directory
 		 */
 		getCurrentDirectory: function(){
-			return this._currentDirectory || this.$el.find('#dir').val() || '/';
+			return this.model.get('path');
 		},
 		/**
 		 * Returns the directory permissions
 		 * @return permission value as integer
 		 */
 		getDirectoryPermissions: function() {
-			return parseInt(this.$el.find('#permissions').val(), 10);
+			return this.model.get('permissions');
 		},
 		/**
 		 * Changes the current directory and reload the file list.
@@ -1435,10 +1447,11 @@
 			if (targetDir.length > 0 && targetDir[0] !== '/') {
 				targetDir = '/' + targetDir;
 			}
-			this._currentDirectory = targetDir;
 
 			// legacy stuff
 			this.$el.find('#dir').val(targetDir);
+
+			this.model.set({'path': targetDir});
 
 			if (changeUrl !== false) {
 				var params = {
@@ -1484,8 +1497,7 @@
 				.addClass(direction === 'desc' ? this.SORT_INDICATOR_DESC_CLASS : this.SORT_INDICATOR_ASC_CLASS);
 			if (update) {
 				if (this._clientSideSort) {
-					this.files.sort(this._sortComparator);
-					this.setFiles(this.files);
+					this.collection.sort(this._sortComparator);
 				}
 				else {
 					this.reload();
@@ -1521,12 +1533,9 @@
 			this._currentFileModel = null;
 			this.$el.find('.select-all').prop('checked', false);
 			this.showMask();
-			this._reloadCall = this.filesClient.getFolderContents(
-				this.getCurrentDirectory(), {
-					includeParent: true,
-					properties: this._getWebdavProperties()
-				}
-			);
+
+			this._reloadCall = this.model.fetch();
+
 			if (this._detailsView) {
 				// close sidebar
 				this._updateDetailsView(null);
@@ -1582,6 +1591,7 @@
 				return true;
 			}
 
+			/*
 			// TODO: parse remaining quota from PROPFIND response
 			this.updateStorageStatistics(true);
 
@@ -1594,12 +1604,13 @@
 
 			result.sort(this._sortComparator);
 			this.setFiles(result);
+			*/
 
-			if (this.dirInfo) {
-				var newFileId = this.dirInfo.id;
+			if (this.rootModel) {
+				var newFileId = this.rootModel.id;
 				// update fileid in URL
 				var params = {
-					dir: this.getCurrentDirectory()
+					dir: this.rootModel.get('path')
 				};
 				if (newFileId) {
 					params.fileId = newFileId;
@@ -1787,7 +1798,6 @@
 			}
 			fileEl.remove();
 			// TODO: improve performance on batch update
-			this.isEmpty = !this.files.length;
 			if (typeof(options.updateSummary) === 'undefined' || !!options.updateSummary) {
 				this.updateEmptyContent();
 				this.fileSummary.remove({type: fileEl.attr('data-type'), size: fileEl.attr('data-size')}, true);
@@ -2308,9 +2318,9 @@
 		updateEmptyContent: function() {
 			var permissions = this.getDirectoryPermissions();
 			var isCreatable = (permissions & OC.PERMISSION_CREATE) !== 0;
-			this.$el.find('#emptycontent').toggleClass('hidden', !this.isEmpty);
-			this.$el.find('#emptycontent .uploadmessage').toggleClass('hidden', !isCreatable || !this.isEmpty);
-			this.$el.find('#filestable thead th').toggleClass('hidden', this.isEmpty);
+			this.$el.find('#emptycontent').toggleClass('hidden', !!this.collection.length);
+			this.$el.find('#emptycontent .uploadmessage').toggleClass('hidden', !isCreatable || !!this.collection.length);
+			this.$el.find('#filestable thead th').toggleClass('hidden', !!this.collection.length);
 		},
 		/**
 		 * Shows the loading mask.
@@ -2418,9 +2428,9 @@
 			} else {
 				$('#searchresults').removeClass('filter-empty');
 				$('#searchresults .emptycontent').removeClass('emptycontent-search');
-				this.$el.find('#filestable thead th').toggleClass('hidden', this.isEmpty);
+				this.$el.find('#filestable thead th').toggleClass('hidden', !this.collection.length);
 				if (!this.$el.find('.mask').exists()) {
-					this.$el.find('#emptycontent').toggleClass('hidden', !this.isEmpty);
+					this.$el.find('#emptycontent').toggleClass('hidden', !!this.collection.length);
 				}
 				this.$el.find('.nofilterresults').addClass('hidden');
 			}
