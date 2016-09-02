@@ -1926,15 +1926,22 @@ OC.Util = {
 		return false;
 	},
 
-	setupClipboard: function(element) {
+	setupClipboard: function(element, options) {
+		options = options || {};
+		options.notificationMode = options.notificationMode || 'tooltip';
+		options.successMessage = options.successMessage ||  t('core', 'Copied!');
 		var clipboard = new Clipboard(element);
 		clipboard.on('success', function(e) {
-			$input = $(e.trigger);
-			$input.tooltip({placement: 'bottom', trigger: 'manual', title: t('core', 'Copied!')});
-			$input.tooltip('show');
-			_.delay(function() {
-				$input.tooltip('hide');
-			}, 3000);
+			if (options.notificationMode === 'tooltip') {
+				$input = $(e.trigger);
+				$input.tooltip({placement: 'bottom', trigger: 'manual', title: options.successMessage});
+				$input.tooltip('show');
+				_.delay(function() {
+					$input.tooltip('hide');
+				}, 3000);
+			} else {
+				OC.Notification.showTemporary(options.successMessage);
+			}
 		});
 		clipboard.on('error', function (e) {
 			$input = $(e.trigger);
@@ -1947,15 +1954,19 @@ OC.Util = {
 				actionMsg = t('core', 'Press Ctrl-C to copy.');
 			}
 
-			$input.tooltip({
-				placement: 'bottom',
-				trigger: 'manual',
-				title: actionMsg
-			});
-			$input.tooltip('show');
-			_.delay(function () {
-				$input.tooltip('hide');
-			}, 3000);
+			if (options.notificationMode === 'tooltip') {
+				$input.tooltip({
+					placement: 'bottom',
+					trigger: 'manual',
+					title: actionMsg
+				});
+				$input.tooltip('show');
+				_.delay(function () {
+					$input.tooltip('hide');
+				}, 3000);
+			} else {
+				OC.Notification.showTemporary(options.successMessage);
+			}
 		});
 	}
 };
