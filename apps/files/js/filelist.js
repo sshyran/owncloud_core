@@ -351,6 +351,8 @@
 				}
 			}
 
+			this._setupDirInfoRefreshInterval(5 * 60 * 1000);
+
 			OC.Plugins.attach('OCA.Files.FileList', this);
 		},
 
@@ -366,6 +368,9 @@
 			}
 			if (this._detailsView) {
 				this._detailsView.remove();
+			}
+			if (this._refreshTimer) {
+				clearInterval(this._refreshTimer);
 			}
 			// TODO: also unregister other event handlers
 			this.fileActions.off('registerAction', this._onFileActionsUpdated);
@@ -1380,12 +1385,22 @@
 		},
 		/**
 		 * Returns the current directory
-		 * @method getCurrentDirectory
-		 * @return current directory
+		 * @return {string} current directory
 		 */
 		getCurrentDirectory: function(){
 			return this._currentDirectory || this.$el.find('#dir').val() || '/';
 		},
+
+		/**
+		 * Returns the information about the current directory
+		 *
+		 * @return {OC.Files.FileInfo}
+		 * @since 9.2
+		 */
+		getDirectoryInfo: function() {
+			return this.dirInfo;
+		},
+
 		/**
 		 * Returns the directory permissions
 		 * @return permission value as integer
@@ -1602,11 +1617,10 @@
 				return true;
 			}
 
-			// TODO: parse remaining quota from PROPFIND response
-			this.updateStorageStatistics(true);
-
 			// first entry is the root
 			this.dirInfo = result.shift();
+
+			this._displayStorageWarnings();
 
 			if (this.dirInfo.permissions) {
 				this.setDirectoryPermissions(this.dirInfo.permissions);
@@ -1629,8 +1643,18 @@
 			return true;
 		},
 
-		updateStorageStatistics: function(force) {
-			OCA.Files.Files.updateStorageStatistics(this.getCurrentDirectory(), force);
+		/**
+		 * Update dirInfo by querying the server
+		 */
+		updateStorageStatistics: function() {
+			var self = this;
+			return this.filesClient.getFileInfo(
+				this.getCurrentDirectory(), {
+					properties: this._getWebdavProperties()
+				}).then(function(status, data) {
+				self.dirInfo = data;
+				self._displayStorageWarnings();
+			});
 		},
 
 		/**
@@ -2341,12 +2365,10 @@
 				self.updateEmptyContent();
 				self.fileSummary.update();
 				self.updateSelectionSummary();
-				// FIXME: don't repeat this, do it once all files are done
-				self.updateStorageStatistics();
 			}
 
-			_.each(files, function(file) {
-				self.filesClient.remove(dir + '/' + file)
+			var promises = _.map(files, function(file) {
+				return self.filesClient.remove(dir + '/' + file)
 					.done(function() {
 						removeFromList(file);
 					})
@@ -2365,6 +2387,9 @@
 							self.showFileBusyState(files, false);
 						}
 					});
+				});
+			$.when.apply($, promises).then(function() {
+				self.updateStorageStatistics();
 			});
 		},
 		/**
@@ -2912,6 +2937,64 @@
 		registerDetailView: function(detailView) {
 			if (this._detailsView) {
 				this._detailsView.addDetailView(detailView);
+			}
+		},
+
+		_displayStorageWarnings: function() {
+			// FIXME: read from dirInfo
+			return;
+			var usedSpacePercent = $('#usedSpacePercent').val(),
+				owner = $('#owner').val(),
+				ownerDisplayName = $('#ownerDisplayName').val();
+			if (usedSpacePercent > 98) {
+				if (owner !== oc_current_user) {
+					OC.Notification.showTemporary(t('files', 'Storage of {owner} is full, files can not be updated or synced anymore!',
+						{ owner: ownerDisplayName }));
+					return;
+				}
+				OC.Notification.show(t('files', 'Your storage is full, files can not be updated or synced anymore!'));
+				return;
+			}
+			if (usedSpacePercent > 90) {
+				if (owner !== oc_current_user) {
+					OC.Notification.showTemporary(t('files', 'Storage of {owner} is almost full ({usedSpacePercent}%)',
+						{ usedSpacePercent: usedSpacePercent,  owner: ownerDisplayName }));
+					return;
+				}
+				OC.Notification.show(t('files', 'Your storage is almost full ({usedSpacePercent}%)',
+					{usedSpacePercent: usedSpacePercent}));
+			}
+		},
+
+		_setupDirInfoRefreshInterval: function(interval) {
+			if (!OC.currentUser) {
+				return;
+			}
+
+			var self = this;
+			var func = _.bind(this.updateStorageStatistics, this);
+			this._refreshTimer = setInterval(func, interval);
+
+			var showHandler = function() {
+				if (!self._refreshTimer) {
+					self._refreshTimer = setInterval(func, interval);
+				}
+			};
+			var hideHandler = function() {
+				clearInterval(self._refreshTimer);
+				self._refreshTimer = 0;
+			};
+
+			// toggle timer when switching away to another view
+			this.$el.on('show', showHandler);
+			this.$el.on('hide', hideHandler);
+
+			// Use jquery-visibility to de-/re-activate file stats sync
+			if ($.support.pageVisibility) {
+				$(document).on({
+					'show': showHandler,
+					'hide': hideHandler
+				});
 			}
 		}
 	};
