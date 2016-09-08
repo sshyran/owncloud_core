@@ -8,7 +8,7 @@ Feature: provisioning
 		Then the OCS status code should be "998"
 		And the HTTP status code should be "200"
 
-	Scenario: Listing all users
+	Scenario: Listing all usersupdate-phpunit
 		Given As an "admin"
 		When sending "GET" to "/cloud/users"
 		Then the OCS status code should be "100"
@@ -304,7 +304,7 @@ Feature: provisioning
 	Scenario: enable an app
 		Given As an "admin"
 		And app "user_ldap" is disabled
-		When sending "POST" to "/cloud/apps/user_ldap"
+		When sending "POST" to "/cloud/apps/comments"
 		Then the OCS status code should be "100"
 		And the HTTP status code should be "200"
 		And app "user_ldap" is enabled
@@ -312,7 +312,7 @@ Feature: provisioning
 	Scenario: disable an app
 		Given As an "admin"
 		And app "user_ldap" is enabled
-		When sending "DELETE" to "/cloud/apps/user_ldap"
+		When sending "DELETE" to "/cloud/apps/comments"
 		Then the OCS status code should be "100"
 		And the HTTP status code should be "200"
 		And app "user_ldap" is disabled
