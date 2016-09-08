@@ -21,7 +21,8 @@
 namespace OCA\DAV\Files;
 
 use Sabre\DAVACL\AbstractPrincipalCollection;
-use Sabre\DAVACL\IPrincipal;
+use Sabre\HTTP\URLUtil;
+use Sabre\DAV\SimpleCollection;
 
 class RootCollection extends AbstractPrincipalCollection {
 
@@ -33,9 +34,14 @@ class RootCollection extends AbstractPrincipalCollection {
 	 * supplied by the authentication backend.
 	 *
 	 * @param array $principalInfo
-	 * @return IPrincipal
+	 * @return INode
 	 */
 	function getChildForPrincipal(array $principalInfo) {
+		list(,$name) = URLUtil::splitPath($principalInfo['uri']);
+		$user = \OC::$server->getUserSession()->getUser();
+		if ($name !== $user->getUID()) {
+			return new SimpleCollection($name);
+		}
 		return new FilesHome($principalInfo);
 	}
 
