@@ -230,7 +230,7 @@ OC.FileUpload.prototype = {
 			&& this.getFile().size > this.uploader.fileUploadParam.maxChunkSize
 		) {
 			data.isChunked = true;
-			chunkFolderPromise = this.uploader.filesClient.createDirectory(
+			chunkFolderPromise = this.uploader.davClient.createDirectory(
 				'uploads/' + encodeURIComponent(OC.getCurrentUser().uid) + '/' + encodeURIComponent(this.getId())
 			);
 			// TODO: if fails, it means same id already existed, need to retry
@@ -256,7 +256,7 @@ OC.FileUpload.prototype = {
 		}
 
 		var uid = OC.getCurrentUser().uid;
-		return this.uploader.filesClient.move(
+		return this.uploader.davClient.move(
 			'uploads/' + encodeURIComponent(uid) + '/' + encodeURIComponent(this.getId()) + '/.file',
 			'files/' + encodeURIComponent(uid) + '/' + OC.joinPaths(this.getFullPath(), this.getFileName())
 		);
@@ -268,7 +268,7 @@ OC.FileUpload.prototype = {
 	abort: function() {
 		if (this.data.isChunked) {
 			// delete transfer directory for this upload
-			this.uploader.filesClient.remove(
+			this.uploader.davClient.remove(
 				'uploads/' + encodeURIComponent(OC.getCurrentUser().uid) + '/' + encodeURIComponent(this.getId())
 			);
 		}
@@ -367,9 +367,18 @@ OC.Uploader.prototype = _.extend({
 	fileList: null,
 
 	/**
+	 * Files DAV client
+	 *
 	 * @type OC.Files.Client
 	 */
 	filesClient: null,
+
+	/**
+	 * DAV client for root endpoint
+	 *
+	 * @type OC.Files.Client
+	 */
+	davClient: null,
 
 	/**
 	 * Function that will allow us to know if Ajax uploads are supported
@@ -706,6 +715,7 @@ OC.Uploader.prototype = _.extend({
 	 * @param {Object} options
 	 * @param {OCA.Files.FileList} [options.fileList] file list object
 	 * @param {OC.Files.Client} [options.filesClient] files client object
+	 * @param {OC.Files.Client} [options.davClient] client to root DAV endpoint
 	 * @param {Object} [options.dropZone] drop zone for drag and drop upload
 	 */
 	init: function($uploadEl, options) {
@@ -713,7 +723,17 @@ OC.Uploader.prototype = _.extend({
 		options = options || {};
 
 		this.fileList = options.fileList;
+		// client for user's files
 		this.filesClient = options.filesClient || OC.Files.getClient();
+		// client for root DAV endpoint
+		this.davClient = options.davClient || new OC.Files.Client({
+			host: OC.getHost(),
+			port: OC.getPort(),
+			userName: this.filesClient.getUserName(),
+			password: this.filesClient.getPassword(),
+			root: OC.linkToRemoteBase('dav'),
+			useHTTPS: OC.getProtocol() === 'https'
+		});
 
 		$uploadEl = $($uploadEl);
 		this.$uploadEl = $uploadEl;
@@ -727,7 +747,8 @@ OC.Uploader.prototype = _.extend({
 				type: 'PUT',
 				dropZone: options.dropZone, // restrict dropZone to content div
 				autoUpload: false,
-				sequentialUploads: true,
+				maxChunkSize: 10 * 1000000, // 10 MB
+
 				//singleFileUploads is on by default, so the data.files array will always have length 1
 				/**
 				 * on first add of every selection
