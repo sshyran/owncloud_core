@@ -8,7 +8,7 @@ Feature: provisioning
 		Then the OCS status code should be "998"
 		And the HTTP status code should be "200"
 
-	Scenario: Listing all usersupdate-phpunit
+	Scenario: Listing all users
 		Given As an "admin"
 		When sending "GET" to "/cloud/users"
 		Then the OCS status code should be "100"
